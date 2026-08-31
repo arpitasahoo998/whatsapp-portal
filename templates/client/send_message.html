@@ -1,0 +1,144 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="header-section" style="margin-bottom: 2rem;">
+    <h1>Create New Campaign</h1>
+    <p style="color: var(--text-muted);">Fill in the details below to start your WhatsApp campaign.</p>
+</div>
+
+<form method="POST" enctype="multipart/form-data" id="campaignForm">
+    <div class="glass-card">
+        <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-comment-alt" style="color: var(--primary);"></i> 1. Message Content
+        </h3>
+        <div class="form-group">
+            <label>Message Text</label>
+            <textarea name="message_text" rows="5" placeholder="Type your message here... Use {name} for personalization if using CSV." required style="resize: vertical;"></textarea>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-users" style="color: var(--secondary);"></i> 2. Contact Numbers
+        </h3>
+        <div class="upload-grid">
+            <div class="form-group">
+                <label>Upload Excel/CSV</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" name="number_file" id="number_file" accept=".csv, .xlsx, .xls" class="file-input">
+                    <label for="number_file" class="file-label">
+                        <i class="fas fa-file-excel"></i>
+                        <span>Choose file...</span>
+                    </label>
+                </div>
+                <small style="color: var(--text-muted);">First column should contain phone numbers.</small>
+            </div>
+            <div class="form-group">
+                <label>OR Manually Enter Numbers</label>
+                <textarea name="manual_numbers" rows="3" placeholder="+919876543210&#10;+919988776655" style="font-family: monospace;"></textarea>
+                <small style="color: var(--text-muted);">One number per line or comma separated.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-photo-video" style="color: var(--primary);"></i> 3. Media Attachments (Optional)
+        </h3>
+        <div class="upload-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            {% for i in range(1, 5) %}
+            <div class="form-group">
+                <label>Image {{ i }}</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" name="image{{ i }}" id="image{{ i }}" accept="image/*" class="file-input">
+                    <label for="image{{ i }}" class="file-label">
+                        <i class="fas fa-image"></i>
+                        <span>Select Image</span>
+                    </label>
+                </div>
+            </div>
+            {% endfor %}
+            <div class="form-group">
+                <label>PDF Attachment</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" name="pdf_file" id="pdf_file" accept=".pdf" class="file-input">
+                    <label for="pdf_file" class="file-label">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>Select PDF</span>
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Video Attachment</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" name="video_file" id="video_file" accept="video/*" class="file-input">
+                    <label for="video_file" class="file-label">
+                        <i class="fas fa-video"></i>
+                        <span>Select Video</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-bottom: 3rem;">
+        <a href="{{ url_for('dashboard') }}" class="btn" style="background: rgba(0,0,0,0.05); color: var(--text-main);">Cancel</a>
+        <button type="submit" class="btn btn-primary" style="padding: 0.75rem 3rem;">
+            <i class="fas fa-paper-plane" style="margin-right: 0.5rem;"></i> Send for Approval
+        </button>
+    </div>
+</form>
+
+<style>
+.file-upload-wrapper {
+    position: relative;
+    width: 100%;
+}
+.file-input {
+    width: 0.1px;
+    height: 0.1px;
+    opacity: 0;
+    overflow: hidden;
+    position: absolute;
+    z-index: -1;
+}
+.file-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: #f8fafc;
+    border: 2px dashed var(--glass-border);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: var(--text-muted);
+    text-align: center;
+}
+.file-label i {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+.file-label:hover {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--text-main);
+}
+.file-input:focus + .file-label {
+    border-color: var(--primary);
+}
+</style>
+
+<script>
+document.querySelectorAll('.file-input').forEach(input => {
+    input.addEventListener('change', function(e) {
+        let fileName = e.target.files[0] ? e.target.files[0].name : 'Choose file...';
+        let label = this.nextElementSibling;
+        label.querySelector('span').innerText = fileName;
+        label.style.borderColor = 'var(--success)';
+        label.style.color = 'var(--success)';
+    });
+});
+</script>
+{% endblock %}
+

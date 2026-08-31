@@ -1,0 +1,233 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="header-section"
+    style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2.5rem;">
+    <div>
+        <h1 style="font-weight: 800; letter-spacing: -0.02em;">User Management</h1>
+        <p style="color: var(--text-muted); font-weight: 500;">Securely manage system access and roles.</p>
+    </div>
+    <button onclick="document.getElementById('createUserModal').style.display='flex'" class="btn btn-primary"
+        style="padding: 0.75rem 2rem; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+        <i class="fas fa-plus"></i> Create New User
+    </button>
+</div>
+
+<div class="glass-card table-responsive-card" style="padding: 0;">
+    <table>
+        <thead>
+            <tr>
+                <th><i class="fas fa-hashtag" style="margin-right: 0.5rem; opacity: 0.5;"></i> ID</th>
+                <th><i class="fas fa-user" style="margin-right: 0.5rem; opacity: 0.5;"></i> Username</th>
+                <th><i class="fas fa-shield-alt" style="margin-right: 0.5rem; opacity: 0.5;"></i> Role</th>
+                <th><i class="fas fa-coins" style="margin-right: 0.5rem; opacity: 0.5;"></i> Credits</th>
+                <th><i class="fas fa-cog" style="margin-right: 0.5rem; opacity: 0.5;"></i> Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td style="color: var(--text-muted); font-family: monospace;">#{{ user.id }}</td>
+                <td style="font-weight: 700; color: var(--text-main);">{{ user.username }}</td>
+                <td><span class="badge badge-{{ 'completed' if user.user_type == 'admin' else 'pending' }}">{{
+                        user.user_type }}</span></td>
+                <td style="font-weight: 700; color: var(--primary);">
+                    {% if user.user_type == 'client' %}
+                    <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                        <i class="fas fa-coins" style="color: #fbbf24; font-size: 0.85rem;"></i>
+                        {{ user.credits }}
+                    </span>
+                    {% else %}
+                    <span style="color: var(--text-muted); font-style: italic; font-weight: 500;">N/A</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button onclick="openEditModal({{ user.id }}, '{{ user.username }}', '{{ user.user_type }}', {{ user.credits }})"
+                            class="btn"
+                            style="background: #eff6ff; color: var(--primary); border: 1px solid #dbeafe; padding: 0.5rem 1rem; font-size: 0.75rem; border-radius: 0.375rem;">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        {% if user.username != 'admin' %}
+                        <button onclick="deleteUser({{ user.id }})" class="btn"
+                            style="background: #fff1f2; color: var(--danger); border: 1px solid #fee2e2; padding: 0.5rem 1rem; font-size: 0.75rem; border-radius: 0.375rem;">
+                            <i class="fas fa-trash-alt"></i> Delete
+                        </button>
+                        {% else %}
+                        <span
+                            style="background: #f8fafc; color: var(--text-muted); padding: 0.5rem 1rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border-color);">
+                            <i class="fas fa-lock"></i> Protected
+                        </span>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal for Editing User -->
+<div id="editUserModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 1.5rem;">
+    <div class="glass-card modal-card" style="padding: 2rem;">
+        <h3 style="margin-bottom: 1.5rem;">Edit User Credentials</h3>
+        <form id="editUserForm" autocomplete="off">
+            <input type="hidden" name="user_id" id="edit_user_id">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" id="edit_username" required>
+            </div>
+            <div class="form-group">
+                <label>New Password (Optional)</label>
+                <div style="position: relative;">
+                    <input type="password" id="edit_password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
+                    <i class="fas fa-eye" onclick="togglePassword('edit_password', this)" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted);"></i>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>User Type</label>
+                <select name="user_type" id="edit_user_type" onchange="toggleEditCredits(this.value)" required>
+                    <option value="client">Client</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group" id="edit_credits_group">
+                <label>Credits</label>
+                <input type="number" name="credits" id="edit_credits" min="0" required>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                <button type="button" onclick="document.getElementById('editUserModal').style.display='none'"
+                    class="btn" style="flex: 1; background: #f1f5f9; color: var(--text-muted);">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Simple Modal for Creating User -->
+<div id="createUserModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 1.5rem;">
+    <div class="glass-card modal-card" style="padding: 2rem;">
+        <h3 style="margin-bottom: 1.5rem;">Create New User</h3>
+        <form id="createUserForm" autocomplete="off">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" required autocomplete="none">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <div style="position: relative;">
+                    <input type="password" id="create_password" name="password" required autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
+                    <i class="fas fa-eye" onclick="togglePassword('create_password', this)" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted);"></i>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>User Type</label>
+                <select name="user_type" onchange="toggleCreateCredits(this.value)">
+                    <option value="client">Client</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group" id="create_credits_group">
+                <label>Credits</label>
+                <input type="number" name="credits" value="1000" min="0" required>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                <button type="button" onclick="document.getElementById('createUserModal').style.display='none'"
+                    class="btn" style="flex: 1; background: rgba(0,0,0,0.05);">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function togglePassword(inputId, iconElement) {
+        const input = document.getElementById(inputId);
+        if (input.type === "password") {
+            input.type = "text";
+            iconElement.classList.remove('fa-eye');
+            iconElement.classList.add('fa-eye-slash');
+        } else {
+            input.type = "password";
+            iconElement.classList.remove('fa-eye-slash');
+            iconElement.classList.add('fa-eye');
+        }
+    }
+
+    function toggleCreateCredits(val) {
+        const group = document.getElementById('create_credits_group');
+        const input = group.querySelector('input');
+        if (val === 'admin') {
+            group.style.display = 'none';
+            input.value = 0;
+        } else {
+            group.style.display = 'block';
+            if (input.value === '0') input.value = 1000;
+        }
+    }
+
+    function toggleEditCredits(val) {
+        const group = document.getElementById('edit_credits_group');
+        const input = document.getElementById('edit_credits');
+        if (val === 'admin') {
+            group.style.display = 'none';
+            input.value = 0;
+        } else {
+            group.style.display = 'block';
+        }
+    }
+
+    function openEditModal(id, username, type, credits) {
+        document.getElementById('edit_user_id').value = id;
+        document.getElementById('edit_username').value = username;
+        document.getElementById('edit_password').value = '';
+        document.getElementById('edit_user_type').value = type;
+        document.getElementById('edit_credits').value = credits || 0;
+        toggleEditCredits(type);
+        document.getElementById('editUserModal').style.display = 'flex';
+    }
+
+    document.getElementById('editUserForm').onsubmit = function (e) {
+        e.preventDefault();
+        const id = document.getElementById('edit_user_id').value;
+        const formData = new FormData(this);
+        fetch(`/admin/user/edit/${id}`, { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) location.reload();
+                else showNotification(data.error, 'danger');
+            });
+    };
+
+    document.getElementById('createUserForm').onsubmit = function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        fetch('/admin/user/create', {
+            method: 'POST',
+            body: formData
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showNotification(data.error, 'danger');
+                }
+            });
+    };
+
+    function deleteUser(id) {
+        if (!confirm('Are you sure you want to delete this user?')) return;
+        fetch(`/admin/user/delete/${id}`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showNotification(data.error, 'danger');
+                }
+            });
+    }
+</script>
+{% endblock %}
