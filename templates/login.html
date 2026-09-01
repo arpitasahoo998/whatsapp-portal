@@ -1,124 +1,350 @@
 {% extends "layout.html" %}
+
 {% block login_content %}
+
 <div class="login-page">
+
     <div class="login-card">
+
+        <!-- BRAND -->
         <div class="login-brand">
             <i class="fab fa-whatsapp"></i>
             <span>WP PORTAL</span>
         </div>
+
+        <!-- HEADER -->
         <div class="login-header">
-            <h2>Welcome</h2>
-            <p>Please sign in to your account to continue</p>
+            <div class="demo-badge">
+                LIVE DEMO
+            </div>
+
+            <h2>Welcome to WP Portal</h2>
+
+            <p>
+                WhatsApp Campaign & Messaging Management
+            </p>
         </div>
-        <form method="POST">
-            <div class="form-group">
-                <label>Username</label>
-                <div class="input-wrapper">
-                    <i class="fas fa-user"></i>
-                    <input type="text" name="username" placeholder="Enter your username" required>
-                </div>
+
+        <!-- DEMO ACCESS -->
+        <div class="demo-info">
+
+            <div class="demo-icon">
+                <i class="fas fa-rocket"></i>
             </div>
-            <div class="form-group">
-                <label>Password</label>
-                <div class="input-wrapper">
-                    <i class="fas fa-lock"></i>
-                    <input type="password" id="loginPassword" name="password" placeholder="Enter your password" required>
-                    <i class="fas fa-eye toggle-password" onclick="togglePassword('loginPassword', this)" style="left: auto; right: 1rem; cursor: pointer; pointer-events: auto;"></i>
-                </div>
-            </div>
-            <button type="submit" class="btn btn-primary login-btn">Sign In</button>
+
+            <h3>Explore the Portal</h3>
+
+            <p>
+                Experience campaign management, messaging,
+                contacts, templates and other portal features.
+            </p>
+
+        </div>
+
+        <!-- ENTER DEMO -->
+        <button
+            type="button"
+            class="demo-enter-btn"
+            onclick="loginAsDemo()"
+        >
+            <i class="fas fa-sign-in-alt"></i>
+            Enter Demo
+        </button>
+
+        <div class="demo-note">
+            <i class="fas fa-shield-alt"></i>
+            Demo Admin Access
+        </div>
+
+        <!-- HIDDEN LOGIN FORM -->
+        <form method="POST" id="demoLoginForm" style="display: none;">
+
+            <input
+                type="text"
+                name="username"
+                value="admin"
+            >
+
+            <input
+                type="password"
+                name="password"
+                value="admin123"
+            >
+
         </form>
 
     </div>
+
 </div>
 
+
 <style>
+
+.login-page {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background:
+        linear-gradient(
+            rgba(0, 0, 0, 0.25),
+            rgba(0, 0, 0, 0.25)
+        ),
+        url('/static/media/login_bg.png') no-repeat center center;
+
+    background-size: cover;
+    padding: 2rem;
+}
+
+
+/* LOGIN CARD */
+
+.login-card {
+    background: #ffffff;
+    width: 100%;
+    max-width: 460px;
+
+    padding: 3rem;
+
+    border-radius: 1.5rem;
+
+    box-shadow:
+        0 25px 50px -12px rgba(0, 0, 0, 0.30);
+
+    border: 1px solid rgba(255, 255, 255, 0.8);
+
+    text-align: center;
+}
+
+
+/* BRAND */
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 0.8rem;
+
+    margin-bottom: 2rem;
+
+    color: var(--primary);
+
+    font-weight: 800;
+
+    font-size: 1.5rem;
+}
+
+.login-brand i {
+    font-size: 2rem;
+}
+
+
+/* HEADER */
+
+.login-header {
+    text-align: center;
+
+    margin-bottom: 2rem;
+}
+
+.login-header h2 {
+    font-size: 1.8rem;
+
+    color: var(--text-main);
+
+    margin: 0.8rem 0 0.5rem;
+
+    font-weight: 800;
+}
+
+.login-header p {
+    color: var(--text-muted);
+
+    font-size: 0.9rem;
+
+    line-height: 1.5;
+
+    margin: 0;
+}
+
+
+/* LIVE DEMO BADGE */
+
+.demo-badge {
+    display: inline-block;
+
+    padding: 0.35rem 0.9rem;
+
+    border-radius: 999px;
+
+    background: #e8f5e9;
+
+    color: #198754;
+
+    font-size: 0.7rem;
+
+    font-weight: 800;
+
+    letter-spacing: 1px;
+}
+
+
+/* DEMO INFORMATION */
+
+.demo-info {
+    background: #f8fafc;
+
+    border: 1px solid #e5e7eb;
+
+    border-radius: 1rem;
+
+    padding: 1.6rem;
+
+    margin-bottom: 1.5rem;
+}
+
+.demo-icon {
+    width: 58px;
+    height: 58px;
+
+    margin: 0 auto 1rem;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 50%;
+
+    background: #f0fdf4;
+
+    color: #16a34a;
+
+    font-size: 1.5rem;
+}
+
+.demo-info h3 {
+    margin: 0 0 0.6rem;
+
+    font-size: 1.15rem;
+
+    color: var(--text-main);
+
+    font-weight: 700;
+}
+
+.demo-info p {
+    margin: 0;
+
+    color: var(--text-muted);
+
+    font-size: 0.85rem;
+
+    line-height: 1.6;
+}
+
+
+/* ENTER DEMO BUTTON */
+
+.demo-enter-btn {
+    width: 100%;
+
+    padding: 1rem 1.2rem;
+
+    border: none;
+
+    border-radius: 0.75rem;
+
+    background: var(--primary);
+
+    color: white;
+
+    font-size: 1rem;
+
+    font-weight: 700;
+
+    cursor: pointer;
+
+    transition:
+        transform 0.2s ease,
+        opacity 0.2s ease,
+        box-shadow 0.2s ease;
+
+    box-shadow:
+        0 5px 15px rgba(37, 99, 235, 0.25);
+}
+
+.demo-enter-btn:hover {
+    transform: translateY(-2px);
+
+    opacity: 0.92;
+
+    box-shadow:
+        0 8px 20px rgba(37, 99, 235, 0.30);
+}
+
+.demo-enter-btn i {
+    margin-right: 0.5rem;
+}
+
+
+/* DEMO NOTE */
+
+.demo-note {
+    margin-top: 1.2rem;
+
+    color: var(--text-muted);
+
+    font-size: 0.75rem;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 0.4rem;
+}
+
+
+/* MOBILE */
+
+@media (max-width: 600px) {
+
     .login-page {
-        height: 100vh;
-        width: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: url('/static/media/login_bg.png') no-repeat center center;
-        background-size: cover;
-        padding: 2rem;
+        padding: 1rem;
     }
 
     .login-card {
-        background: #ffffff;
-        width: 100%;
-        max-width: 420px;
-        padding: 3rem;
-        border-radius: 1.25rem;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.8);
-    }
-
-    .login-brand {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 1rem;
-        margin-bottom: 2rem;
-        color: var(--primary);
-        font-weight: 800;
-        font-size: 1.5rem;
-    }
-
-    .login-header {
-        text-align: center;
-        margin-bottom: 2.5rem;
+        padding: 2rem 1.5rem;
     }
 
     .login-header h2 {
-        font-size: 1.75rem;
-        color: var(--text-main);
-        margin-bottom: 0.5rem;
-        font-weight: 800;
+        font-size: 1.5rem;
     }
 
-    .login-header p {
-        color: var(--text-muted);
-        font-size: 0.875rem;
-    }
+}
 
-    .input-wrapper {
-        position: relative;
-    }
-
-    .input-wrapper i {
-        position: absolute;
-        left: 1rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: var(--text-muted);
-    }
-
-    .input-wrapper input {
-        padding-left: 2.75rem !important;
-    }
-
-    .login-btn {
-        width: 100%;
-        padding: 1rem !important;
-        font-size: 1rem !important;
-        margin-top: 1rem;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-    }
 </style>
 
+
 <script>
-    function togglePassword(inputId, iconElement) {
-        const input = document.getElementById(inputId);
-        if (input.type === "password") {
-            input.type = "text";
-            iconElement.classList.remove('fa-eye');
-            iconElement.classList.add('fa-eye-slash');
-        } else {
-            input.type = "password";
-            iconElement.classList.remove('fa-eye-slash');
-            iconElement.classList.add('fa-eye');
-        }
+
+function loginAsDemo() {
+
+    const form = document.getElementById('demoLoginForm');
+
+    if (!form) {
+        console.error('Demo login form not found');
+        return;
     }
+
+    form.submit();
+}
+
 </script>
+
 {% endblock %}
