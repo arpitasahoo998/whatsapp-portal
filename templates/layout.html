@@ -87,13 +87,13 @@
                             </a>
                         </li>
                         {% endif %}
-                        {% if current_user.user_type != 'admin' %}
+                        
                         <li class="nav-item">
                             <a href="{{ url_for('send_message') }}" class="nav-link {{ 'active' if request.endpoint == 'send_message' }}">
                                 <i class="fas fa-paper-plane"></i> <span>New Campaign</span>
                             </a>
                         </li>
-                        {% endif %}
+                        
                     </ul>
                 </nav>
             </aside>
