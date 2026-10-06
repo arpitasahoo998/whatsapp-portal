@@ -1,9 +1,10 @@
-flask>=3.0.0
-flask-sqlalchemy>=3.1.0
-flask-login
+Flask
+Flask-SQLAlchemy
+Flask-Login
 pandas
 openpyxl
-werkzeug
+Werkzeug
 psycopg2-binary
 gunicorn
 requests
+python-dotenv
