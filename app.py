@@ -615,6 +615,16 @@ def index():
         url_for("login")
     )
 
+@app.route("/send-message", methods=["GET", "POST"])
+@login_required
+def send_message():
+    if request.method == "POST":
+        # Keep your existing message-processing logic here.
+        # WhatsApp can remain optional.
+        return redirect(url_for("send_message"))
+
+    return render_template("client/send_message.html")
+    
 @app.route("/users")
 @login_required
 def manage_users():
