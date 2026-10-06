@@ -1,18 +1,24 @@
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin
 from datetime import datetime, timedelta
+
 
 db = SQLAlchemy()
 
 
 def get_local_now():
-    """
-    Returns current time in IST.
-    """
-    return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+    return datetime.utcnow() + timedelta(
+        hours=5,
+        minutes=30
+    )
 
 
-class User(db.Model, UserMixin):
+class User(
+    db.Model,
+    __import__(
+        "flask_login"
+    ).UserMixin
+):
 
     id = db.Column(
         db.Integer,
@@ -71,10 +77,6 @@ class MessageRequest(db.Model):
         default="Pending"
     )
 
-    # ---------------------------------------------------------
-    # Media paths
-    # ---------------------------------------------------------
-
     image1 = db.Column(
         db.String(255)
     )
@@ -98,10 +100,6 @@ class MessageRequest(db.Model):
     video_file = db.Column(
         db.String(255)
     )
-
-    # ---------------------------------------------------------
-    # Dates
-    # ---------------------------------------------------------
 
     created_at = db.Column(
         db.DateTime,
@@ -133,7 +131,9 @@ class Contact(db.Model):
 
     request_id = db.Column(
         db.Integer,
-        db.ForeignKey("message_request.id"),
+        db.ForeignKey(
+            "message_request.id"
+        ),
         nullable=False
     )
 
@@ -141,12 +141,6 @@ class Contact(db.Model):
         db.String(20),
         nullable=False
     )
-
-    # Pending
-    # Sent
-    # Delivered
-    # Read
-    # Failed
 
     status = db.Column(
         db.String(20),
@@ -165,11 +159,6 @@ class Contact(db.Model):
         db.Boolean,
         default=False
     )
-
-    # ---------------------------------------------------------
-    # IMPORTANT:
-    # Meta WhatsApp message ID
-    # ---------------------------------------------------------
 
     whatsapp_message_id = db.Column(
         db.String(255),
