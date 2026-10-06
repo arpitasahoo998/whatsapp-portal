@@ -621,7 +621,7 @@ def index():
 def dashboard():
 
     return render_template(
-        "dashboard.html"
+        "admin/dashboard.html"
     )
 
 
