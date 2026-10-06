@@ -1,9 +1,9 @@
-Flask
-Flask-SQLAlchemy
-Flask-Login
+flask>=3.0.0
+flask-sqlalchemy>=3.1.0
+flask-login
 pandas
 openpyxl
-Werkzeug
+werkzeug
 psycopg2-binary
 gunicorn
 requests
