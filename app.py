@@ -1,120 +1,40 @@
 import os
-import json
 import csv
 import io
-import requests
-import pandas as pd
-
+import json
 from datetime import datetime, timedelta
+from functools import wraps
 
-from dotenv import load_dotenv
+import pandas as pd
+import requests
 
 from flask import (
     Flask,
-    render_template,
     request,
+    jsonify,
+    render_template,
     redirect,
     url_for,
+    session,
     flash,
-    jsonify,
-    send_from_directory,
-    Response
 )
 
+from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager,
+    UserMixin,
     login_user,
-    login_required,
     logout_user,
-    current_user
+    login_required,
+    current_user,
 )
 
 from werkzeug.security import (
     generate_password_hash,
-    check_password_hash
+    check_password_hash,
 )
 
-from werkzeug.utils import secure_filename
-
-from models import (
-    db,
-    User,
-    MessageRequest,
-    Contact,
-    WhatsAppInstance
-)
-
-
-# ============================================================
-# ENVIRONMENT
-# ============================================================
-
-load_dotenv()
-
-
-def env(name, default=None):
-    return os.getenv(name, default)
-
-
-SECRET_KEY = env("SECRET_KEY")
-DATABASE_URL = env("DATABASE_URL")
-DEFAULT_ADMIN_USERNAME = env(
-    "DEFAULT_ADMIN_USERNAME",
-    "admin"
-)
-DEFAULT_ADMIN_PASSWORD = env("DEFAULT_ADMIN_PASSWORD")
-DEFAULT_CLIENT_PASSWORD = env(
-    "DEFAULT_CLIENT_PASSWORD",
-    "change-me"
-)
-
-# WhatsApp Cloud API is OPTIONAL.
-# The portal can run without these variables.
-WHATSAPP_API_TOKEN = env("WHATSAPP_API_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = env(
-    "WHATSAPP_PHONE_NUMBER_ID"
-)
-WHATSAPP_VERIFY_TOKEN = env(
-    "WHATSAPP_VERIFY_TOKEN"
-)
-WHATSAPP_API_VERSION = env(
-    "WHATSAPP_API_VERSION",
-    "v23.0"
-)
-
-# These three variables are required for the application itself.
-required_environment = {
-    "SECRET_KEY": SECRET_KEY,
-    "DATABASE_URL": DATABASE_URL,
-    "DEFAULT_ADMIN_PASSWORD": DEFAULT_ADMIN_PASSWORD,
-}
-
-missing_environment = [
-    name
-    for name, value in required_environment.items()
-    if not value
-]
-
-if missing_environment:
-    raise RuntimeError(
-        "Missing required environment variables: "
-        + ", ".join(missing_environment)
-    )
-
-
-# ============================================================
-# DATABASE URL
-# ============================================================
-
-if DATABASE_URL:
-
-    if DATABASE_URL.startswith("postgres://"):
-
-        DATABASE_URL = DATABASE_URL.replace(
-            "postgres://",
-            "postgresql://",
-            1
-        )
+from sqlalchemy import text
 
 
 # ============================================================
@@ -123,71 +43,121 @@ if DATABASE_URL:
 
 app = Flask(__name__)
 
+
+# ============================================================
+# ENVIRONMENT VARIABLES
+# ============================================================
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
+
+# WhatsApp is OPTIONAL
+WHATSAPP_API_TOKEN = os.getenv("WHATSAPP_API_TOKEN")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv(
+    "WHATSAPP_PHONE_NUMBER_ID"
+)
+WHATSAPP_VERIFY_TOKEN = os.getenv(
+    "WHATSAPP_VERIFY_TOKEN"
+)
+
+WHATSAPP_API_VERSION = os.getenv(
+    "WHATSAPP_API_VERSION",
+    "v23.0"
+)
+
+
+# ============================================================
+# REQUIRED CONFIGURATION
+# ============================================================
+
+missing_variables = []
+
+if not SECRET_KEY:
+    missing_variables.append("SECRET_KEY")
+
+if not DATABASE_URL:
+    missing_variables.append("DATABASE_URL")
+
+if not DEFAULT_ADMIN_PASSWORD:
+    missing_variables.append(
+        "DEFAULT_ADMIN_PASSWORD"
+    )
+
+if missing_variables:
+
+    raise RuntimeError(
+        "Missing environment variables: "
+        + ", ".join(missing_variables)
+    )
+
+
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
+# PostgreSQL compatibility
+if DATABASE_URL.startswith("postgres://"):
+
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql://",
+        1
+    )
+
+
 app.config["SECRET_KEY"] = SECRET_KEY
 
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config[
+    "SQLALCHEMY_DATABASE_URI"
+] = DATABASE_URL
 
 app.config[
     "SQLALCHEMY_TRACK_MODIFICATIONS"
 ] = False
 
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+app.config[
+    "SQLALCHEMY_ENGINE_OPTIONS"
+] = {
     "pool_pre_ping": True,
-    "pool_recycle": 300,
 }
 
-app.config["UPLOAD_FOLDER"] = "uploads"
-
-app.config["MEDIA_FOLDER"] = os.path.join(
-    "static",
-    "media"
-)
-
-app.config["MAX_CONTENT_LENGTH"] = (
-    100 * 1024 * 1024
-)
-
 
 # ============================================================
-# DIRECTORIES
+# UPLOAD CONFIGURATION
 # ============================================================
+
+UPLOAD_FOLDER = os.getenv(
+    "UPLOAD_FOLDER",
+    "uploads"
+)
+
+app.config[
+    "UPLOAD_FOLDER"
+] = UPLOAD_FOLDER
+
+app.config[
+    "MAX_CONTENT_LENGTH"
+] = 100 * 1024 * 1024
+
 
 os.makedirs(
-    app.config["UPLOAD_FOLDER"],
+    UPLOAD_FOLDER,
     exist_ok=True
 )
 
-os.makedirs(
-    app.config["MEDIA_FOLDER"],
-    exist_ok=True
-)
-
 
 # ============================================================
-# DATABASE
+# EXTENSIONS
 # ============================================================
 
-db.init_app(app)
-
-
-# ============================================================
-# LOGIN
-# ============================================================
+db = SQLAlchemy(app)
 
 login_manager = LoginManager()
 
-login_manager.login_view = "login"
-
 login_manager.init_app(app)
 
-
-@login_manager.user_loader
-def load_user(user_id):
-
-    return db.session.get(
-        User,
-        int(user_id)
-    )
+login_manager.login_view = "login"
 
 
 # ============================================================
@@ -203,34 +173,210 @@ def get_local_now():
 
 
 # ============================================================
-# PHONE NUMBER
+# MODELS
 # ============================================================
 
-def normalize_phone_number(phone):
+class User(
+    db.Model,
+    UserMixin
+):
 
-    if not phone:
-        return ""
-
-    phone = str(phone).strip()
-
-    phone = (
-        phone
-        .replace("+", "")
-        .replace(" ", "")
-        .replace("-", "")
-        .replace("(", "")
-        .replace(")", "")
+    id = db.Column(
+        db.Integer,
+        primary_key=True
     )
 
-    return "".join(
-        character
-        for character in phone
-        if character.isdigit()
+    username = db.Column(
+        db.String(150),
+        unique=True,
+        nullable=False
+    )
+
+    password = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    user_type = db.Column(
+        db.String(20),
+        nullable=False,
+        default="client"
+    )
+
+    credits = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0
+    )
+
+
+class MessageRequest(db.Model):
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False
+    )
+
+    user = db.relationship(
+        "User",
+        backref="requests"
+    )
+
+    message_text = db.Column(
+        db.Text,
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="Pending"
+    )
+
+    image1 = db.Column(
+        db.String(255)
+    )
+
+    image2 = db.Column(
+        db.String(255)
+    )
+
+    image3 = db.Column(
+        db.String(255)
+    )
+
+    image4 = db.Column(
+        db.String(255)
+    )
+
+    pdf_file = db.Column(
+        db.String(255)
+    )
+
+    video_file = db.Column(
+        db.String(255)
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=get_local_now
+    )
+
+    approved_at = db.Column(
+        db.DateTime
+    )
+
+    report_ready_at = db.Column(
+        db.DateTime
+    )
+
+    contacts = db.relationship(
+        "Contact",
+        backref="request",
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
+
+
+class Contact(db.Model):
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    request_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "message_request.id"
+        ),
+        nullable=False
+    )
+
+    phone_number = db.Column(
+        db.String(20),
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="Pending"
+    )
+
+    sent_at = db.Column(
+        db.DateTime
+    )
+
+    error_message = db.Column(
+        db.String(500)
+    )
+
+    is_csv_matched = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    whatsapp_message_id = db.Column(
+        db.String(255),
+        unique=True,
+        nullable=True,
+        index=True
+    )
+
+
+class WhatsAppInstance(db.Model):
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    name = db.Column(
+        db.String(50)
+    )
+
+    phone_number = db.Column(
+        db.String(20),
+        unique=True
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="Active"
+    )
+
+    last_used = db.Column(
+        db.DateTime,
+        default=get_local_now
     )
 
 
 # ============================================================
-# WHATSAPP CONFIGURATION
+# LOGIN
+# ============================================================
+
+@login_manager.user_loader
+def load_user(user_id):
+
+    try:
+
+        return db.session.get(
+            User,
+            int(user_id)
+        )
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# HELPERS
 # ============================================================
 
 def whatsapp_is_configured():
@@ -241,461 +387,184 @@ def whatsapp_is_configured():
     )
 
 
-def whatsapp_config_error():
+def admin_required(function):
 
-    missing = []
+    @wraps(function)
+    @login_required
+    def decorated(*args, **kwargs):
 
-    if not WHATSAPP_API_TOKEN:
-        missing.append(
-            "WHATSAPP_API_TOKEN"
-        )
+        if current_user.user_type != "admin":
 
-    if not WHATSAPP_PHONE_NUMBER_ID:
-        missing.append(
-            "WHATSAPP_PHONE_NUMBER_ID"
-        )
+            return jsonify({
+                "success": False,
+                "error": "Admin access required"
+            }), 403
 
-    if not missing:
-        return "WhatsApp API is configured."
+        return function(*args, **kwargs)
 
-    return (
-        "WhatsApp integration is disabled. "
-        "Missing optional environment variables: "
-        + ", ".join(missing)
+    return decorated
+
+
+def save_uploaded_file(file):
+
+    if not file:
+
+        return None
+
+    if not file.filename:
+
+        return None
+
+    filename = file.filename
+
+    timestamp = datetime.now().strftime(
+        "%Y%m%d%H%M%S%f"
     )
 
+    safe_filename = (
+        f"{timestamp}_{filename}"
+    )
 
-# ============================================================
-# DATABASE INITIALIZATION
-# ============================================================
+    filepath = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        safe_filename
+    )
 
-with app.app_context():
+    file.save(filepath)
 
-    db.create_all()
-
-    # --------------------------------------------------------
-    # ADMIN
-    # --------------------------------------------------------
-
-    if DEFAULT_ADMIN_PASSWORD:
-
-        admin = User.query.filter_by(
-            username=DEFAULT_ADMIN_USERNAME
-        ).first()
-
-        if not admin:
-
-            admin = User(
-
-                username=(
-                    DEFAULT_ADMIN_USERNAME
-                ),
-
-                password=(
-                    generate_password_hash(
-                        DEFAULT_ADMIN_PASSWORD
-                    )
-                ),
-
-                user_type="admin",
-
-                credits=0
-            )
-
-            db.session.add(admin)
-
-    # --------------------------------------------------------
-    # DEFAULT CLIENT
-    # --------------------------------------------------------
-
-    client = User.query.filter_by(
-        username="user1"
-    ).first()
-
-    if not client:
-
-        client = User(
-
-            username="user1",
-
-            password=(
-                generate_password_hash(
-                    DEFAULT_CLIENT_PASSWORD
-                )
-            ),
-
-            user_type="client",
-
-            credits=0
-        )
-
-        db.session.add(client)
-
-    db.session.commit()
-
-
-print(
-    "WhatsApp integration:",
-    "ENABLED"
-    if whatsapp_is_configured()
-    else "DISABLED"
-)
+    return safe_filename
 
 
 # ============================================================
-# WHATSAPP CLOUD API
+# WHATSAPP
 # ============================================================
 
-class WhatsAppService:
+def send_whatsapp_message(
+    phone_number,
+    message_text
+):
 
-    @staticmethod
-    def send_text_message(
-        to_number,
-        text
-    ):
+    if not whatsapp_is_configured():
 
-        if not whatsapp_is_configured():
-
-            return {
-
-                "success": False,
-
-                "error":
-                    whatsapp_config_error()
-            }
-
-        clean_number = (
-            normalize_phone_number(
-                to_number
-            )
-        )
-
-        if not clean_number:
-
-            return {
-
-                "success": False,
-
-                "error":
-                    "Invalid phone number"
-            }
-
-        if not text:
-
-            return {
-
-                "success": False,
-
-                "error":
-                    "Message text is empty"
-            }
-
-        url = (
-            "https://graph.facebook.com/"
-            f"{WHATSAPP_API_VERSION}/"
-            f"{WHATSAPP_PHONE_NUMBER_ID}"
-            "/messages"
-        )
-
-        headers = {
-
-            "Authorization":
-                f"Bearer {WHATSAPP_API_TOKEN}",
-
-            "Content-Type":
-                "application/json"
+        return {
+            "success": False,
+            "configured": False,
+            "error":
+                "WhatsApp API is not configured"
         }
 
-        payload = {
+    url = (
+        "https://graph.facebook.com/"
+        f"{WHATSAPP_API_VERSION}/"
+        f"{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
 
-            "messaging_product":
-                "whatsapp",
+    headers = {
 
-            "recipient_type":
-                "individual",
+        "Authorization":
+            f"Bearer {WHATSAPP_API_TOKEN}",
 
-            "to":
-                clean_number,
+        "Content-Type":
+            "application/json"
+    }
 
-            "type":
-                "text",
+    payload = {
 
-            "text": {
+        "messaging_product":
+            "whatsapp",
 
-                "preview_url":
-                    False,
+        "to":
+            phone_number,
 
-                "body":
-                    text
-            }
+        "type":
+            "text",
+
+        "text": {
+
+            "body":
+                message_text
         }
+    }
+
+    try:
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        response_data = {}
 
         try:
 
-            response = requests.post(
+            response_data = response.json()
 
-                url,
+        except Exception:
 
-                headers=headers,
+            response_data = {
+                "raw":
+                    response.text
+            }
 
-                json=payload,
-
-                timeout=30
-            )
-
-            try:
-
-                data = response.json()
-
-            except ValueError:
-
-                data = {
-                    "raw": response.text
-                }
-
-            print(
-                "WhatsApp response:",
-                response.status_code
-            )
-
-            print(
-                json.dumps(
-                    data,
-                    indent=2
-                )
-            )
-
-            if response.ok:
-
-                messages = (
-                    data.get(
-                        "messages",
-                        []
-                    )
-                )
-
-                message_id = None
-
-                if messages:
-
-                    message_id = (
-                        messages[0].get(
-                            "id"
-                        )
-                    )
-
-                return {
-
-                    "success": True,
-
-                    "message_id":
-                        message_id,
-
-                    "response":
-                        data
-                }
-
-            error = (
-                data
-                .get("error", {})
-                .get(
-                    "message"
-                )
-            )
+        if response.ok:
 
             return {
 
-                "success": False,
+                "success": True,
 
-                "error":
-                    error
-                    or "WhatsApp API request failed",
+                "configured": True,
 
-                "response":
-                    data
+                "data":
+                    response_data
             }
 
-        except requests.RequestException as error:
+        return {
 
-            return {
+            "success": False,
 
-                "success": False,
+            "configured": True,
 
-                "error":
-                    str(error)
-            }
+            "error":
+                response_data
+        }
+
+    except Exception as error:
+
+        return {
+
+            "success": False,
+
+            "configured": True,
+
+            "error":
+                str(error)
+        }
 
 
 # ============================================================
-# TEMPLATE MESSAGE
+# HOME
 # ============================================================
 
-class WhatsAppTemplateService:
+@app.route("/")
+def index():
 
-    @staticmethod
-    def send_template(
-        to_number,
-        template_name,
-        language_code="en_US",
-        parameters=None
-    ):
+    if current_user.is_authenticated:
 
-        if not whatsapp_is_configured():
+        if current_user.user_type == "admin":
 
-            return {
-
-                "success": False,
-
-                "error":
-                    whatsapp_config_error()
-            }
-
-        clean_number = (
-            normalize_phone_number(
-                to_number
+            return redirect(
+                url_for("admin_dashboard")
             )
+
+        return redirect(
+            url_for("dashboard")
         )
 
-        components = []
-
-        if parameters:
-
-            body_parameters = []
-
-            for value in parameters:
-
-                body_parameters.append({
-
-                    "type":
-                        "text",
-
-                    "text":
-                        str(value)
-                })
-
-            components.append({
-
-                "type":
-                    "body",
-
-                "parameters":
-                    body_parameters
-            })
-
-        template = {
-
-            "name":
-                template_name,
-
-            "language": {
-
-                "code":
-                    language_code
-            }
-        }
-
-        if components:
-
-            template["components"] = (
-                components
-            )
-
-        payload = {
-
-            "messaging_product":
-                "whatsapp",
-
-            "to":
-                clean_number,
-
-            "type":
-                "template",
-
-            "template":
-                template
-        }
-
-        url = (
-            "https://graph.facebook.com/"
-            f"{WHATSAPP_API_VERSION}/"
-            f"{WHATSAPP_PHONE_NUMBER_ID}"
-            "/messages"
-        )
-
-        headers = {
-
-            "Authorization":
-                f"Bearer {WHATSAPP_API_TOKEN}",
-
-            "Content-Type":
-                "application/json"
-        }
-
-        try:
-
-            response = requests.post(
-
-                url,
-
-                headers=headers,
-
-                json=payload,
-
-                timeout=30
-            )
-
-            data = response.json()
-
-            if response.ok:
-
-                messages = (
-                    data.get(
-                        "messages",
-                        []
-                    )
-                )
-
-                return {
-
-                    "success": True,
-
-                    "message_id":
-                        (
-                            messages[0].get("id")
-                            if messages
-                            else None
-                        ),
-
-                    "response":
-                        data
-                }
-
-            return {
-
-                "success": False,
-
-                "error":
-                    data.get(
-                        "error",
-                        {}
-                    ).get(
-                        "message",
-                        "Template send failed"
-                    ),
-
-                "response":
-                    data
-            }
-
-        except Exception as error:
-
-            return {
-
-                "success": False,
-
-                "error":
-                    str(error)
-            }
+    return redirect(
+        url_for("login")
+    )
 
 
 # ============================================================
@@ -710,42 +579,93 @@ def login():
 
     if request.method == "POST":
 
-        username = request.form.get(
-            "username",
-            ""
+        username = (
+            request.form.get(
+                "username"
+            )
+            or ""
         ).strip()
 
-        password = request.form.get(
-            "password",
-            ""
+        password = (
+            request.form.get(
+                "password"
+            )
+            or ""
         )
 
         user = User.query.filter_by(
             username=username
         ).first()
 
-        if (
-            user
-            and check_password_hash(
-                user.password,
-                password
-            )
+        if user and check_password_hash(
+            user.password,
+            password
         ):
 
             login_user(user)
 
+            if user.user_type == "admin":
+
+                return redirect(
+                    url_for(
+                        "admin_dashboard"
+                    )
+                )
+
             return redirect(
-                url_for("dashboard")
+                url_for(
+                    "dashboard"
+                )
             )
 
         flash(
             "Invalid username or password",
-            "danger"
+            "error"
         )
 
-    return render_template(
-        "login.html"
-    )
+    try:
+
+        return render_template(
+            "login.html"
+        )
+
+    except Exception:
+
+        return """
+        <html>
+        <head>
+            <title>WhatsApp Portal Login</title>
+        </head>
+        <body>
+            <h2>WhatsApp Portal</h2>
+
+            <form method="POST">
+
+                <input
+                    name="username"
+                    placeholder="Username"
+                    required
+                >
+
+                <br><br>
+
+                <input
+                    type="password"
+                    name="password"
+                    placeholder="Password"
+                    required
+                >
+
+                <br><br>
+
+                <button type="submit">
+                    Login
+                </button>
+
+            </form>
+        </body>
+        </html>
+        """
 
 
 # ============================================================
@@ -764,327 +684,678 @@ def logout():
 
 
 # ============================================================
-# DASHBOARD
+# CLIENT DASHBOARD
 # ============================================================
 
-@app.route("/")
+@app.route("/dashboard")
 @login_required
 def dashboard():
 
-    if current_user.user_type == "admin":
+    requests_list = MessageRequest.query.filter_by(
+        user_id=current_user.id
+    ).order_by(
+        MessageRequest.id.desc()
+    ).all()
 
-        requests_list = (
-            MessageRequest.query
-            .order_by(
-                MessageRequest.created_at.desc()
-            )
-            .all()
-        )
-
-        instances = (
-            WhatsAppInstance.query.all()
-        )
+    try:
 
         return render_template(
-            "admin/dashboard.html",
+            "dashboard.html",
+            requests=requests_list
+        )
+
+    except Exception:
+
+        return jsonify({
+
+            "success": True,
+
+            "user": current_user.username,
+
+            "requests": [
+
+                {
+                    "id": item.id,
+
+                    "message":
+                        item.message_text,
+
+                    "status":
+                        item.status,
+
+                    "created_at":
+                        str(item.created_at)
+                }
+
+                for item in requests_list
+            ]
+        })
+
+
+# ============================================================
+# ADMIN DASHBOARD
+# ============================================================
+
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+
+    requests_list = MessageRequest.query.order_by(
+        MessageRequest.id.desc()
+    ).all()
+
+    users = User.query.order_by(
+        User.id.desc()
+    ).all()
+
+    try:
+
+        return render_template(
+            "admin.html",
             requests=requests_list,
-            instances=instances
+            users=users
         )
 
-    requests_list = (
-        MessageRequest.query
-        .filter_by(
-            user_id=current_user.id
-        )
-        .order_by(
-            MessageRequest.created_at.desc()
-        )
-        .all()
-    )
+    except Exception:
 
-    return render_template(
-        "client/dashboard.html",
-        requests=requests_list
-    )
+        return jsonify({
+
+            "success": True,
+
+            "users": len(users),
+
+            "requests": len(
+                requests_list
+            ),
+
+            "whatsapp":
+                whatsapp_is_configured()
+        })
 
 
 # ============================================================
-# SEND MESSAGE / CREATE CAMPAIGN
-# ============================================================
-
-@app.route(
-    "/send-message",
-    methods=["GET", "POST"]
-)
-@login_required
-def send_message():
-
-    if request.method == "GET":
-
-        return render_template(
-            "client/send_message.html"
-        )
-
-    message_text = request.form.get(
-        "message_text",
-        ""
-    ).strip()
-
-    manual_numbers = request.form.get(
-        "manual_numbers",
-        ""
-    )
-
-    numbers = []
-
-    # --------------------------------------------------------
-    # MANUAL NUMBERS
-    # --------------------------------------------------------
-
-    if manual_numbers:
-
-        numbers.extend(
-
-            manual_numbers
-            .replace(",", "\n")
-            .splitlines()
-        )
-
-    # --------------------------------------------------------
-    # FILE
-    # --------------------------------------------------------
-
-    uploaded_file = request.files.get(
-        "number_file"
-    )
-
-    if (
-        uploaded_file
-        and uploaded_file.filename
-    ):
-
-        filename = secure_filename(
-            uploaded_file.filename
-        )
-
-        try:
-
-            if filename.lower().endswith(
-                ".csv"
-            ):
-
-                df = pd.read_csv(
-                    uploaded_file
-                )
-
-            elif filename.lower().endswith(
-                (
-                    ".xlsx",
-                    ".xls"
-                )
-            ):
-
-                df = pd.read_excel(
-                    uploaded_file
-                )
-
-            else:
-
-                flash(
-                    "Only CSV or Excel files are supported.",
-                    "danger"
-                )
-
-                return redirect(
-                    url_for("send_message")
-                )
-
-            if len(df.columns) == 0:
-
-                raise ValueError(
-                    "File has no columns"
-                )
-
-            numbers.extend(
-                df.iloc[:, 0]
-                .dropna()
-                .astype(str)
-                .tolist()
-            )
-
-        except Exception as error:
-
-            flash(
-                f"Could not read file: {error}",
-                "danger"
-            )
-
-            return redirect(
-                url_for("send_message")
-            )
-
-    # --------------------------------------------------------
-    # NORMALIZE
-    # --------------------------------------------------------
-
-    normalized = []
-
-    for number in numbers:
-
-        number = (
-            normalize_phone_number(
-                number
-            )
-        )
-
-        if number:
-
-            normalized.append(
-                number
-            )
-
-    numbers = list(
-        dict.fromkeys(
-            normalized
-        )
-    )
-
-    if not numbers:
-
-        flash(
-            "Please provide at least one phone number.",
-            "danger"
-        )
-
-        return redirect(
-            url_for("send_message")
-        )
-
-    # --------------------------------------------------------
-    # CREDIT CHECK
-    # --------------------------------------------------------
-
-    if (
-        len(numbers)
-        > current_user.credits
-    ):
-
-        flash(
-            "Insufficient credits.",
-            "danger"
-        )
-
-        return redirect(
-            url_for("send_message")
-        )
-
-    # --------------------------------------------------------
-    # CREATE CAMPAIGN
-    # --------------------------------------------------------
-
-    campaign = MessageRequest(
-
-        user_id=current_user.id,
-
-        message_text=message_text,
-
-        status="Pending",
-
-        report_ready_at=(
-            get_local_now()
-            + timedelta(hours=6)
-        )
-    )
-
-    db.session.add(
-        campaign
-    )
-
-    db.session.flush()
-
-    for number in numbers:
-
-        db.session.add(
-
-            Contact(
-
-                request_id=
-                    campaign.id,
-
-                phone_number=
-                    number,
-
-                status=
-                    "Pending"
-            )
-        )
-
-    current_user.credits -= len(
-        numbers
-    )
-
-    db.session.commit()
-
-    flash(
-        "Campaign submitted for approval.",
-        "success"
-    )
-
-    return redirect(
-        url_for("dashboard")
-    )
-
-
-# ============================================================
-# APPROVE + SEND
+# CREATE REQUEST
 # ============================================================
 
 @app.route(
-    "/admin/approve/<int:request_id>",
+    "/api/requests",
     methods=["POST"]
 )
 @login_required
-def approve_request(request_id):
+def create_request():
 
-    if current_user.user_type != "admin":
+    try:
+
+        message_text = (
+            request.form.get(
+                "message_text"
+            )
+            or request.json.get(
+                "message_text"
+            )
+            if request.is_json
+            else request.form.get(
+                "message_text"
+            )
+        )
+
+        if not message_text:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "message_text is required"
+
+            }), 400
+
+        new_request = MessageRequest(
+
+            user_id=current_user.id,
+
+            message_text=message_text,
+
+            status="Pending"
+        )
+
+        new_request.image1 = (
+            save_uploaded_file(
+                request.files.get("image1")
+            )
+        )
+
+        new_request.image2 = (
+            save_uploaded_file(
+                request.files.get("image2")
+            )
+        )
+
+        new_request.image3 = (
+            save_uploaded_file(
+                request.files.get("image3")
+            )
+        )
+
+        new_request.image4 = (
+            save_uploaded_file(
+                request.files.get("image4")
+            )
+        )
+
+        new_request.pdf_file = (
+            save_uploaded_file(
+                request.files.get("pdf_file")
+            )
+        )
+
+        new_request.video_file = (
+            save_uploaded_file(
+                request.files.get("video_file")
+            )
+        )
+
+        db.session.add(
+            new_request
+        )
+
+        db.session.commit()
 
         return jsonify({
-            "success": False,
-            "error": "Unauthorized"
-        }), 403
 
-    if not whatsapp_is_configured():
+            "success": True,
+
+            "request_id":
+                new_request.id,
+
+            "status":
+                new_request.status
+
+        }), 201
+
+    except Exception as error:
+
+        db.session.rollback()
 
         return jsonify({
 
             "success": False,
-
-            "whatsapp":
-                "disabled",
 
             "error":
-                whatsapp_config_error()
+                str(error)
 
-        }), 503
+        }), 500
 
-    campaign = db.get_or_404(
+
+# ============================================================
+# GET REQUESTS
+# ============================================================
+
+@app.route(
+    "/api/requests",
+    methods=["GET"]
+)
+@login_required
+def get_requests():
+
+    if current_user.user_type == "admin":
+
+        requests_list = MessageRequest.query.order_by(
+            MessageRequest.id.desc()
+        ).all()
+
+    else:
+
+        requests_list = MessageRequest.query.filter_by(
+            user_id=current_user.id
+        ).order_by(
+            MessageRequest.id.desc()
+        ).all()
+
+    return jsonify({
+
+        "success": True,
+
+        "requests": [
+
+            {
+
+                "id":
+                    item.id,
+
+                "user_id":
+                    item.user_id,
+
+                "username":
+                    item.user.username,
+
+                "message_text":
+                    item.message_text,
+
+                "status":
+                    item.status,
+
+                "created_at":
+                    str(item.created_at),
+
+                "approved_at":
+                    str(item.approved_at)
+                    if item.approved_at
+                    else None,
+
+                "report_ready_at":
+                    str(item.report_ready_at)
+                    if item.report_ready_at
+                    else None,
+
+                "contacts":
+                    len(item.contacts)
+
+            }
+
+            for item in requests_list
+        ]
+
+    })
+
+
+# ============================================================
+# GET SINGLE REQUEST
+# ============================================================
+
+@app.route(
+    "/api/requests/<int:request_id>",
+    methods=["GET"]
+)
+@login_required
+def get_request(request_id):
+
+    item = db.session.get(
         MessageRequest,
         request_id
     )
 
-    if campaign.status == "Approved":
+    if not item:
 
         return jsonify({
 
             "success": False,
 
             "error":
-                "Campaign already approved"
+                "Request not found"
+
+        }), 404
+
+    if (
+        current_user.user_type != "admin"
+        and item.user_id != current_user.id
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Access denied"
+
+        }), 403
+
+    return jsonify({
+
+        "success": True,
+
+        "request": {
+
+            "id":
+                item.id,
+
+            "message_text":
+                item.message_text,
+
+            "status":
+                item.status,
+
+            "created_at":
+                str(item.created_at),
+
+            "contacts": [
+
+                {
+
+                    "id":
+                        contact.id,
+
+                    "phone_number":
+                        contact.phone_number,
+
+                    "status":
+                        contact.status,
+
+                    "sent_at":
+                        str(contact.sent_at)
+                        if contact.sent_at
+                        else None,
+
+                    "error_message":
+                        contact.error_message,
+
+                    "whatsapp_message_id":
+                        contact.whatsapp_message_id
+
+                }
+
+                for contact in item.contacts
+            ]
+
+        }
+
+    })
+
+
+# ============================================================
+# ADD CONTACT
+# ============================================================
+
+@app.route(
+    "/api/requests/<int:request_id>/contacts",
+    methods=["POST"]
+)
+@login_required
+def add_contact(request_id):
+
+    item = db.session.get(
+        MessageRequest,
+        request_id
+    )
+
+    if not item:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Request not found"
+
+        }), 404
+
+    if (
+        current_user.user_type != "admin"
+        and item.user_id != current_user.id
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Access denied"
+
+        }), 403
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    phone_number = (
+        data.get(
+            "phone_number"
+        )
+        or ""
+    ).strip()
+
+    if not phone_number:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "phone_number is required"
+
         }), 400
 
-    contacts = Contact.query.filter_by(
-        request_id=request_id
-    ).all()
+    contact = Contact(
+
+        request_id=request_id,
+
+        phone_number=phone_number,
+
+        status="Pending"
+    )
+
+    db.session.add(contact)
+
+    db.session.commit()
+
+    return jsonify({
+
+        "success": True,
+
+        "contact_id":
+            contact.id
+
+    }), 201
+
+
+# ============================================================
+# UPLOAD CSV CONTACTS
+# ============================================================
+
+@app.route(
+    "/api/requests/<int:request_id>/contacts/csv",
+    methods=["POST"]
+)
+@login_required
+def upload_contacts_csv(request_id):
+
+    item = db.session.get(
+        MessageRequest,
+        request_id
+    )
+
+    if not item:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Request not found"
+
+        }), 404
+
+    if (
+        current_user.user_type != "admin"
+        and item.user_id != current_user.id
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Access denied"
+
+        }), 403
+
+    file = request.files.get(
+        "file"
+    )
+
+    if not file:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "CSV file is required"
+
+        }), 400
+
+    try:
+
+        content = file.read().decode(
+            "utf-8-sig"
+        )
+
+        reader = csv.DictReader(
+            io.StringIO(content)
+        )
+
+        count = 0
+
+        for row in reader:
+
+            phone = (
+                row.get("phone_number")
+                or row.get("phone")
+                or row.get("mobile")
+                or row.get("mobile_number")
+            )
+
+            if not phone:
+
+                continue
+
+            phone = str(
+                phone
+            ).strip()
+
+            if not phone:
+
+                continue
+
+            contact = Contact(
+
+                request_id=request_id,
+
+                phone_number=phone,
+
+                status="Pending",
+
+                is_csv_matched=True
+            )
+
+            db.session.add(
+                contact
+            )
+
+            count += 1
+
+        db.session.commit()
+
+        return jsonify({
+
+            "success": True,
+
+            "imported":
+                count
+
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+# ============================================================
+# APPROVE REQUEST
+# ============================================================
+
+@app.route(
+    "/api/requests/<int:request_id>/approve",
+    methods=["POST"]
+)
+@admin_required
+def approve_request(request_id):
+
+    item = db.session.get(
+        MessageRequest,
+        request_id
+    )
+
+    if not item:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Request not found"
+
+        }), 404
+
+    item.status = "Approved"
+
+    item.approved_at = (
+        get_local_now()
+    )
+
+    db.session.commit()
+
+    return jsonify({
+
+        "success": True,
+
+        "status":
+            item.status
+
+    })
+
+
+# ============================================================
+# SEND REQUEST
+# ============================================================
+
+@app.route(
+    "/api/requests/<int:request_id>/send",
+    methods=["POST"]
+)
+@login_required
+def send_request(request_id):
+
+    item = db.session.get(
+        MessageRequest,
+        request_id
+    )
+
+    if not item:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Request not found"
+
+        }), 404
+
+    if (
+        current_user.user_type != "admin"
+        and item.user_id != current_user.id
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Access denied"
+
+        }), 403
+
+    contacts = item.contacts
 
     if not contacts:
 
@@ -1094,30 +1365,32 @@ def approve_request(request_id):
 
             "error":
                 "No contacts found"
+
         }), 400
 
-    campaign.status = "Approved"
-
-    campaign.approved_at = (
-        get_local_now()
-    )
-
     sent = 0
-
     failed = 0
 
     for contact in contacts:
 
-        result = (
-            WhatsAppService.send_text_message(
+        if not whatsapp_is_configured():
 
-                contact.phone_number,
+            contact.status = "Pending"
 
-                campaign.message_text
+            contact.error_message = (
+                "WhatsApp API is not configured"
             )
+
+            continue
+
+        result = send_whatsapp_message(
+
+            contact.phone_number,
+
+            item.message_text
         )
 
-        if result["success"]:
+        if result.get("success"):
 
             contact.status = "Sent"
 
@@ -1125,13 +1398,23 @@ def approve_request(request_id):
                 get_local_now()
             )
 
-            contact.whatsapp_message_id = (
-                result.get(
-                    "message_id"
-                )
+            contact.error_message = None
+
+            data = result.get(
+                "data",
+                {}
             )
 
-            contact.error_message = None
+            messages = data.get(
+                "messages",
+                []
+            )
+
+            if messages:
+
+                contact.whatsapp_message_id = (
+                    messages[0].get("id")
+                )
 
             sent += 1
 
@@ -1139,41 +1422,102 @@ def approve_request(request_id):
 
             contact.status = "Failed"
 
-            contact.sent_at = (
-                get_local_now()
-            )
-
-            contact.error_message = (
-                result.get(
-                    "error"
-                )
+            contact.error_message = str(
+                result.get("error")
             )
 
             failed += 1
 
-        db.session.commit()
+    if sent > 0:
+
+        item.status = "Sent"
+
+    elif not whatsapp_is_configured():
+
+        item.status = "Pending"
+
+    else:
+
+        item.status = "Failed"
+
+    db.session.commit()
 
     return jsonify({
 
         "success": True,
 
-        "sent": sent,
+        "whatsapp_configured":
+            whatsapp_is_configured(),
 
-        "failed": failed,
+        "sent":
+            sent,
 
-        "total": len(contacts)
+        "failed":
+            failed,
+
+        "status":
+            item.status
+
     })
 
 
 # ============================================================
-# WEBHOOK VERIFY
+# WHATSAPP STATUS
 # ============================================================
 
 @app.route(
-    "/webhook/whatsapp",
+    "/api/whatsapp/status"
+)
+def whatsapp_status():
+
+    return jsonify({
+
+        "success": True,
+
+        "configured":
+            whatsapp_is_configured(),
+
+        "phone_number_id":
+            bool(
+                WHATSAPP_PHONE_NUMBER_ID
+            ),
+
+        "api_token":
+            bool(
+                WHATSAPP_API_TOKEN
+            ),
+
+        "verify_token":
+            bool(
+                WHATSAPP_VERIFY_TOKEN
+            ),
+
+        "api_version":
+            WHATSAPP_API_VERSION
+
+    })
+
+
+# ============================================================
+# WHATSAPP WEBHOOK VERIFICATION
+# ============================================================
+
+@app.route(
+    "/webhook",
     methods=["GET"]
 )
-def verify_whatsapp_webhook():
+def whatsapp_webhook_verify():
+
+    if not WHATSAPP_VERIFY_TOKEN:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "WhatsApp webhook is not configured"
+
+        }), 503
 
     mode = request.args.get(
         "hub.mode"
@@ -1187,182 +1531,98 @@ def verify_whatsapp_webhook():
         "hub.challenge"
     )
 
-    if not WHATSAPP_VERIFY_TOKEN:
-
-        return (
-            "WhatsApp webhook is disabled",
-            503
-        )
-
     if (
         mode == "subscribe"
-        and token
         and token == WHATSAPP_VERIFY_TOKEN
     ):
 
-        return challenge, 200
+        return challenge or "", 200
 
-    return (
-        "Verification failed",
-        403
-    )
+    return "Verification token mismatch", 403
 
 
 # ============================================================
-# WEBHOOK STATUS
+# WHATSAPP WEBHOOK
 # ============================================================
 
 @app.route(
-    "/webhook/whatsapp",
+    "/webhook",
     methods=["POST"]
 )
 def whatsapp_webhook():
 
+    if not whatsapp_is_configured():
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "WhatsApp API is not configured"
+
+        }), 503
+
     try:
 
-        data = request.get_json(
+        payload = request.get_json(
             silent=True
-        )
-
-        if not data:
-
-            return jsonify({
-                "success": False
-            }), 400
+        ) or {}
 
         print(
+            "WhatsApp webhook:",
             json.dumps(
-                data,
-                indent=2
+                payload
             )
         )
 
-        if (
-            data.get("object")
-            != "whatsapp_business_account"
-        ):
-
-            return jsonify({
-                "success": False
-            }), 400
-
-        for entry in data.get(
+        entries = payload.get(
             "entry",
             []
-        ):
+        )
 
-            for change in entry.get(
+        for entry in entries:
+
+            changes = entry.get(
                 "changes",
                 []
-            ):
+            )
+
+            for change in changes:
 
                 value = change.get(
                     "value",
                     {}
                 )
 
-                statuses = value.get(
-                    "statuses",
+                messages = value.get(
+                    "messages",
                     []
                 )
 
-                for status_data in statuses:
+                for message in messages:
 
-                    message_id = (
-                        status_data.get(
-                            "id"
-                        )
+                    message_id = message.get(
+                        "id"
                     )
 
-                    status = (
-                        status_data.get(
-                            "status"
-                        )
+                    sender = message.get(
+                        "from"
                     )
 
                     if not message_id:
 
                         continue
 
-                    contact = (
-                        Contact.query
-                        .filter_by(
-                            whatsapp_message_id=
-                                message_id
-                        )
-                        .first()
-                    )
-
-                    if not contact:
-
-                        print(
-                            "Unknown WhatsApp message:",
+                    contact = Contact.query.filter_by(
+                        whatsapp_message_id=
                             message_id
-                        )
+                    ).first()
 
-                        continue
+                    if contact:
 
-                    status_map = {
+                        contact.status = "Delivered"
 
-                        "sent":
-                            "Sent",
-
-                        "delivered":
-                            "Delivered",
-
-                        "read":
-                            "Read",
-
-                        "failed":
-                            "Failed"
-                    }
-
-                    new_status = (
-                        status_map.get(
-                            status
-                        )
-                    )
-
-                    if not new_status:
-
-                        continue
-
-                    contact.status = (
-                        new_status
-                    )
-
-                    if status == "failed":
-
-                        errors = (
-                            status_data.get(
-                                "errors",
-                                []
-                            )
-                        )
-
-                        if errors:
-
-                            contact.error_message = (
-                                errors[0].get(
-                                    "message"
-                                )
-                                or errors[0].get(
-                                    "title"
-                                )
-                                or "WhatsApp message failed"
-                            )
-
-                        else:
-
-                            contact.error_message = (
-                                "WhatsApp message failed"
-                            )
-
-                    else:
-
-                        contact.error_message = None
-
-                    db.session.commit()
+                        db.session.commit()
 
         return jsonify({
             "success": True
@@ -1391,20 +1651,31 @@ def whatsapp_webhook():
 # HEALTH
 # ============================================================
 
-@app.route("/health")
+@app.route(
+    "/health",
+    methods=["GET"]
+)
 def health():
 
     database_status = "error"
 
+    database_error = None
+
     try:
 
         db.session.execute(
-            db.text("SELECT 1")
+            text("SELECT 1")
         )
 
         database_status = "connected"
 
     except Exception as error:
+
+        database_error = str(
+            error
+        )
+
+    if database_status != "connected":
 
         return jsonify({
 
@@ -1418,11 +1689,11 @@ def health():
                 (
                     "configured"
                     if whatsapp_is_configured()
-                    else "disabled"
+                    else "not configured"
                 ),
 
             "error":
-                str(error)
+                database_error
 
         }), 500
 
@@ -1438,10 +1709,86 @@ def health():
             (
                 "configured"
                 if whatsapp_is_configured()
-                else "disabled"
+                else "not configured"
             )
 
-    })
+    }), 200
+
+
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
+def initialize_database():
+
+    with app.app_context():
+
+        db.create_all()
+
+        admin = User.query.filter_by(
+            username="admin"
+        ).first()
+
+        if not admin:
+
+            admin = User(
+
+                username="admin",
+
+                password=
+                    generate_password_hash(
+                        DEFAULT_ADMIN_PASSWORD
+                    ),
+
+                user_type="admin",
+
+                credits=0
+            )
+
+            db.session.add(
+                admin
+            )
+
+        db.session.commit()
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+try:
+
+    initialize_database()
+
+    print(
+        "Database initialized successfully."
+    )
+
+except Exception as error:
+
+    print(
+        "Database initialization failed:",
+        error
+    )
+
+
+print(
+    "Application configuration loaded."
+)
+
+print(
+    "PostgreSQL:",
+    "configured"
+    if DATABASE_URL
+    else "not configured"
+)
+
+print(
+    "WhatsApp:",
+    "configured"
+    if whatsapp_is_configured()
+    else "not configured"
+)
 
 
 # ============================================================
