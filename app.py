@@ -58,53 +58,47 @@ def env(name, default=None):
 
 SECRET_KEY = env("SECRET_KEY")
 DATABASE_URL = env("DATABASE_URL")
-WHATSAPP_API_TOKEN = env("WHATSAPP_API_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID")
-WHATSAPP_VERIFY_TOKEN = env("WHATSAPP_VERIFY_TOKEN")
-
-WHATSAPP_API_VERSION = env(
-    "WHATSAPP_API_VERSION",
-    "v23.0"
-)
-
-WHATSAPP_DEFAULT_COUNTRY_CODE = env(
-    "WHATSAPP_DEFAULT_COUNTRY_CODE",
-    "91"
-)
-
 DEFAULT_ADMIN_USERNAME = env(
     "DEFAULT_ADMIN_USERNAME",
     "admin"
 )
-
-DEFAULT_ADMIN_PASSWORD = env(
-    "DEFAULT_ADMIN_PASSWORD"
-)
-
+DEFAULT_ADMIN_PASSWORD = env("DEFAULT_ADMIN_PASSWORD")
 DEFAULT_CLIENT_PASSWORD = env(
     "DEFAULT_CLIENT_PASSWORD",
     "change-me"
 )
 
-REQUIRED_ENV_VARS = {
+# WhatsApp Cloud API is OPTIONAL.
+# The portal can run without these variables.
+WHATSAPP_API_TOKEN = env("WHATSAPP_API_TOKEN")
+WHATSAPP_PHONE_NUMBER_ID = env(
+    "WHATSAPP_PHONE_NUMBER_ID"
+)
+WHATSAPP_VERIFY_TOKEN = env(
+    "WHATSAPP_VERIFY_TOKEN"
+)
+WHATSAPP_API_VERSION = env(
+    "WHATSAPP_API_VERSION",
+    "v23.0"
+)
+
+# These three variables are required for the application itself.
+required_environment = {
     "SECRET_KEY": SECRET_KEY,
     "DATABASE_URL": DATABASE_URL,
-    "WHATSAPP_API_TOKEN": WHATSAPP_API_TOKEN,
-    "WHATSAPP_PHONE_NUMBER_ID": WHATSAPP_PHONE_NUMBER_ID,
-    "WHATSAPP_VERIFY_TOKEN": WHATSAPP_VERIFY_TOKEN,
     "DEFAULT_ADMIN_PASSWORD": DEFAULT_ADMIN_PASSWORD,
 }
 
-missing_env_vars = [
+missing_environment = [
     name
-    for name, value in REQUIRED_ENV_VARS.items()
+    for name, value in required_environment.items()
     if not value
 ]
 
-if missing_env_vars:
+if missing_environment:
     raise RuntimeError(
-        "Missing environment variables: "
-        + ", ".join(missing_env_vars)
+        "Missing required environment variables: "
+        + ", ".join(missing_environment)
     )
 
 
@@ -129,21 +123,18 @@ if DATABASE_URL:
 
 app = Flask(__name__)
 
-app.config["SECRET_KEY"] = (
-    SECRET_KEY
-    or "development-only-change-this"
-)
+app.config["SECRET_KEY"] = SECRET_KEY
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+
+app.config[
+    "SQLALCHEMY_TRACK_MODIFICATIONS"
+] = False
 
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,
     "pool_recycle": 300,
 }
-
-app.config[
-    "SQLALCHEMY_TRACK_MODIFICATIONS"
-] = False
 
 app.config["UPLOAD_FOLDER"] = "uploads"
 
@@ -231,22 +222,11 @@ def normalize_phone_number(phone):
         .replace(")", "")
     )
 
-    digits = "".join(
+    return "".join(
         character
         for character in phone
         if character.isdigit()
     )
-
-    if (
-        len(digits) == 10
-        and WHATSAPP_DEFAULT_COUNTRY_CODE
-    ):
-        digits = (
-            WHATSAPP_DEFAULT_COUNTRY_CODE
-            + digits
-        )
-
-    return digits
 
 
 # ============================================================
@@ -275,8 +255,12 @@ def whatsapp_config_error():
             "WHATSAPP_PHONE_NUMBER_ID"
         )
 
+    if not missing:
+        return "WhatsApp API is configured."
+
     return (
-        "Missing WhatsApp configuration: "
+        "WhatsApp integration is disabled. "
+        "Missing optional environment variables: "
         + ", ".join(missing)
     )
 
@@ -348,6 +332,14 @@ with app.app_context():
         db.session.add(client)
 
     db.session.commit()
+
+
+print(
+    "WhatsApp integration:",
+    "ENABLED"
+    if whatsapp_is_configured()
+    else "DISABLED"
+)
 
 
 # ============================================================
@@ -1067,10 +1059,13 @@ def approve_request(request_id):
 
             "success": False,
 
+            "whatsapp":
+                "disabled",
+
             "error":
                 whatsapp_config_error()
 
-        }), 500
+        }), 503
 
     campaign = db.get_or_404(
         MessageRequest,
@@ -1191,6 +1186,13 @@ def verify_whatsapp_webhook():
     challenge = request.args.get(
         "hub.challenge"
     )
+
+    if not WHATSAPP_VERIFY_TOKEN:
+
+        return (
+            "WhatsApp webhook is disabled",
+            503
+        )
 
     if (
         mode == "subscribe"
@@ -1416,7 +1418,7 @@ def health():
                 (
                     "configured"
                     if whatsapp_is_configured()
-                    else "not configured"
+                    else "disabled"
                 ),
 
             "error":
@@ -1436,7 +1438,7 @@ def health():
             (
                 "configured"
                 if whatsapp_is_configured()
-                else "not configured"
+                else "disabled"
             )
 
     })
