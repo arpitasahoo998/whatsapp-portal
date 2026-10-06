@@ -615,7 +615,16 @@ def index():
         url_for("login")
     )
 
+@app.route("/users")
+@login_required
+def manage_users():
+    users = User.query.order_by(User.id.desc()).all()
 
+    return render_template(
+        "admin/users.html",
+        users=users
+    )
+    
 @app.route("/dashboard")
 @login_required
 def dashboard():
